@@ -1,44 +1,66 @@
 package main
 
-import "fmt"
+import (
+	"fmt"
+	"math/rand"
+	"os"
+	"sync"
+)
 
-// Prints a greeting message using values received in
-// the channel
-func first(a chan string) {
-
-	first := <-a // receiving value from channel
-	fmt.Println(first)
+// produce random numbers and send to channel
+func produce(data chan int, wg *sync.WaitGroup) {
+	n := rand.Intn(999)
+	data <- n
+	wg.Done()
 }
 
-func second(b chan string) {
-	second := <-b
-	fmt.Println(second)
-}
+func consumer(data chan int, done chan bool) {
+	f, err := os.Create("randomnumbers")
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
 
-func third(c chan string) {
-	third := <-c
-	fmt.Println(third)
+	for d := range data {
+		_, err = fmt.Fprintln(f, d)
+		if err != nil {
+			fmt.Println(err)
+			f.Close()
+			done <- false
+			return
+		}
+		err = f.Close()
+		if err != nil {
+			fmt.Println(err)
+			done <- false
+			return
+		}
+		done <- true
+	}
 }
 
 func main() {
 
-	// Making a channel of value type string
-	a := make(chan string)
-	b := make(chan string)
-	c := make(chan string)
+	data := make(chan int)
+	done := make(chan bool)
+	wg := sync.WaitGroup{}
 
-	// Starting a concurrent goroutine
-	go first(a)
-	go second(b)
-	go third(c)
+	for i := 0; i < 100; i++ {
+		wg.Add(1)
+		go produce(data, &wg)
+	}
 
-	// Sending values to the channel c
-	c <- "make"
-	a <- "be"
-	b <- "yourself"
+	go consumer(data, done)
+	go func() {
+		wg.Wait()
+		close(data)
+	}()
+	d := <-done
 
-	// Closing channel
-	close(c)
-	close(a)
-	close(b)
+	if d == true {
+		fmt.Println("File written successfully")
+	} else {
+		fmt.Println("File writing failed")
+	}
+
 }
